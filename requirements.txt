@@ -1,0 +1,22 @@
+# API
+fastapi
+uvicorn[standard]
+python-dotenv
+
+# LLM
+anthropic
+
+# Market data
+yfinance
+pandas
+numpy
+
+# News
+newsapi-python
+
+# Vector store & RAG
+chromadb
+sentence-transformers
+
+# PDF parsing
+pymupdf

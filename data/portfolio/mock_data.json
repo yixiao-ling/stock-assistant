@@ -1,0 +1,10 @@
+{
+  "cash": 8500,
+  "positions": [
+    {"ticker": "NVDA", "shares": 50,  "avg_cost": 180.5},
+    {"ticker": "AAPL", "shares": 100, "avg_cost": 165.2},
+    {"ticker": "MSFT", "shares": 40,  "avg_cost": 380.0},
+    {"ticker": "JPM",  "shares": 30,  "avg_cost": 195.0},
+    {"ticker": "XOM",  "shares": 25,  "avg_cost": 108.0}
+  ]
+}

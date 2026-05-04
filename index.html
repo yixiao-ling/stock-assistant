@@ -1,0 +1,775 @@
+<!DOCTYPE html>
+<html lang="zh-CN">
+<head>
+<meta charset="UTF-8">
+<meta name="viewport" content="width=device-width, initial-scale=1.0">
+<title>美股投研助手</title>
+<style>
+*{box-sizing:border-box;margin:0;padding:0}
+:root{
+  --bg:#0d1117;--card:#161b22;--border:#30363d;
+  --text:#e6edf3;--muted:#8b949e;
+  --green:#00d084;--red:#ff4d4f;--blue:#58a6ff;--yellow:#d29922;
+  --mono:'JetBrains Mono','Courier New',monospace;
+  --sans:-apple-system,BlinkMacSystemFont,'Segoe UI',sans-serif;
+}
+body{background:var(--bg);color:var(--text);font-family:var(--sans);height:100vh;display:flex;flex-direction:column;overflow:hidden}
+
+/* ── Header ── */
+header{height:48px;background:#010409;border-bottom:1px solid var(--border);display:flex;align-items:center;padding:0 20px;flex-shrink:0;z-index:100}
+.logo{font-family:var(--mono);font-size:13px;font-weight:bold;color:var(--green);letter-spacing:2px}
+.hdr-right{margin-left:auto;display:flex;align-items:center;gap:20px;font-size:11px;font-family:var(--mono);color:var(--muted)}
+.hdr-chip{display:flex;align-items:center;gap:5px}
+.dot{width:7px;height:7px;border-radius:50%;background:var(--green);box-shadow:0 0 5px var(--green)}
+.dot.red{background:var(--red);box-shadow:0 0 5px var(--red)}
+
+/* ── Layout ── */
+.layout{display:flex;flex:1;overflow:hidden}
+
+/* ── Sidebar ── */
+.sidebar{width:280px;background:var(--card);border-right:1px solid var(--border);display:flex;flex-direction:column;flex-shrink:0}
+.sb-head{padding:14px 16px;border-bottom:1px solid var(--border);font-size:10px;font-weight:700;color:var(--muted);letter-spacing:1.5px;text-transform:uppercase}
+.sb-summary{padding:14px 16px;border-bottom:1px solid var(--border)}
+.sb-total{font-family:var(--mono);font-size:22px;font-weight:bold;color:var(--text)}
+.sb-meta{font-size:11px;color:var(--muted);margin-top:4px;font-family:var(--mono)}
+.sb-positions{flex:1;overflow-y:auto;padding:6px 0}
+.pos-item{padding:10px 16px;border-bottom:1px solid rgba(48,54,61,.4);cursor:pointer;transition:background .12s}
+.pos-item:hover{background:rgba(88,166,255,.04)}
+.pos-r1{display:flex;justify-content:space-between;align-items:center;margin-bottom:3px}
+.pos-r2{display:flex;justify-content:space-between;align-items:center}
+.pos-ticker{font-family:var(--mono);font-size:13px;font-weight:bold}
+.pos-pnl{font-family:var(--mono);font-size:12px;font-weight:600}
+.pos-sector{font-size:10px;color:var(--muted)}
+.pos-weight{font-size:10px;color:var(--muted);font-family:var(--mono)}
+.pos-bar{height:2px;background:var(--border);border-radius:1px;margin-top:5px;overflow:hidden}
+.pos-bar-fill{height:100%;border-radius:1px;transition:width .6s}
+.sb-foot{padding:12px 16px;border-top:1px solid var(--border);font-size:10px;color:var(--muted);font-family:var(--mono)}
+
+/* ── Main ── */
+.main{flex:1;display:flex;flex-direction:column;overflow:hidden}
+.tab-bar{display:flex;background:#010409;border-bottom:1px solid var(--border);padding:0 20px;flex-shrink:0}
+.tab-btn{padding:14px 18px;font-size:13px;font-weight:500;color:var(--muted);border:none;background:none;cursor:pointer;border-bottom:2px solid transparent;transition:color .15s;white-space:nowrap}
+.tab-btn:hover{color:var(--text)}
+.tab-btn.active{color:var(--blue);border-bottom-color:var(--blue)}
+.tab-content{flex:1;overflow-y:auto;padding:24px}
+.tab-panel{display:none}.tab-panel.active{display:block}
+
+/* ── Skeleton ── */
+@keyframes pulse{0%,100%{opacity:1}50%{opacity:.25}}
+.sk{background:#21262d;border-radius:4px;animation:pulse 1.5s ease-in-out infinite}
+.sk-line{height:13px;margin-bottom:9px}
+.sk-sm{width:35%}.sk-md{width:65%}.sk-lg{width:100%}
+.sk-card{height:80px;border-radius:8px;margin-bottom:12px}
+
+/* ── Cards ── */
+.card{background:var(--card);border:1px solid var(--border);border-radius:8px;padding:16px}
+.card-title{font-size:10px;font-weight:700;color:var(--muted);letter-spacing:1.5px;text-transform:uppercase;margin-bottom:12px}
+
+/* ── Buttons ── */
+.btn{border-radius:6px;padding:10px 20px;font-size:13px;font-weight:600;cursor:pointer;transition:opacity .15s;border:none;white-space:nowrap}
+.btn-primary{background:var(--blue);color:#0d1117}
+.btn-primary:hover{opacity:.85}
+.btn-primary:disabled{opacity:.35;cursor:not-allowed}
+.btn-ghost{background:transparent;border:1px solid var(--border);color:var(--text)}
+.btn-ghost:hover{border-color:var(--blue);color:var(--blue)}
+
+/* ── Inputs ── */
+.input{background:var(--card);border:1px solid var(--border);border-radius:6px;color:var(--text);font-size:13px;padding:10px 14px;transition:border-color .15s}
+.input:focus{outline:none;border-color:var(--blue)}
+.ticker-input{font-family:var(--mono);font-size:15px;font-weight:bold;width:130px;text-transform:uppercase}
+.ticker-input::placeholder{font-size:12px;font-weight:normal;text-transform:none;color:var(--muted)}
+
+/* ── Search row ── */
+.search-row{display:flex;gap:10px;align-items:center;flex-wrap:wrap;margin-bottom:20px}
+
+/* ── Badge ── */
+.pos-badge{display:inline-flex;align-items:center;gap:8px;background:var(--card);border:1px solid var(--border);border-radius:6px;padding:8px 14px;font-size:12px;font-family:var(--mono)}
+.badge-lbl{color:var(--muted)}
+
+/* ── Analysis grid ── */
+.analysis-grid{display:grid;grid-template-columns:repeat(3,1fr);gap:14px;margin-bottom:16px}
+.a-card{background:var(--card);border:1px solid var(--border);border-radius:8px;padding:16px}
+.a-card-title{font-size:10px;text-transform:uppercase;letter-spacing:1.5px;color:var(--muted);margin-bottom:8px}
+.a-card-grade{font-family:var(--mono);font-size:30px;font-weight:bold;margin-bottom:6px}
+.a-card-summary{font-size:11px;color:var(--muted);line-height:1.55}
+
+/* ── Expandable ── */
+.expd{background:var(--card);border:1px solid var(--border);border-radius:8px;margin-bottom:12px;overflow:hidden}
+.expd-hd{padding:13px 16px;display:flex;justify-content:space-between;align-items:center;cursor:pointer;user-select:none}
+.expd-hd:hover{background:rgba(255,255,255,.02)}
+.expd-title{font-size:13px;font-weight:600}
+.expd-arrow{font-size:11px;color:var(--muted);transition:transform .2s}
+.expd-body{display:none;padding:0 16px 16px;border-top:1px solid var(--border)}
+.expd-body.open{display:block}
+.expd-arrow.open{transform:rotate(180deg)}
+.analysis-text{font-size:13px;line-height:1.8;color:var(--muted);white-space:pre-wrap;padding-top:12px}
+
+/* ── Synthesis ── */
+.synthesis{background:linear-gradient(135deg,rgba(88,166,255,.05),rgba(0,208,132,.05));border:1px solid rgba(88,166,255,.2);border-radius:8px;padding:20px;margin-bottom:16px}
+.synthesis-lbl{font-size:10px;color:var(--blue);font-weight:700;letter-spacing:1.5px;text-transform:uppercase;margin-bottom:10px}
+
+/* ── Debate ── */
+.debate-grid{display:grid;grid-template-columns:1fr 1fr;gap:14px;margin-bottom:14px}
+.debate-bull{border-left:3px solid var(--green)}
+.debate-bear{border-left:3px solid var(--red)}
+.debate-lbl{font-family:var(--mono);font-size:10px;font-weight:700;letter-spacing:1.5px;text-transform:uppercase;margin-bottom:8px}
+.debate-verdict{border:2px solid var(--yellow);border-radius:8px;padding:18px;background:rgba(210,153,34,.05)}
+.verdict-lbl{font-family:var(--mono);font-size:10px;color:var(--yellow);font-weight:700;letter-spacing:1.5px;text-transform:uppercase;margin-bottom:10px}
+
+/* ── Progress steps ── */
+.progress-wrap{padding:24px 0}
+.step{display:flex;align-items:center;gap:12px;font-size:13px;color:var(--muted);margin-bottom:14px}
+.step-dot{width:10px;height:10px;border-radius:50%;background:var(--border);flex-shrink:0;transition:background .3s}
+.step-dot.active{background:var(--blue);box-shadow:0 0 8px rgba(88,166,255,.5);animation:pulse 1s infinite}
+.step-dot.done{background:var(--green);animation:none}
+.step.done-step{color:var(--text)}
+
+/* ── Advisor ── */
+.risk-grid{display:grid;grid-template-columns:repeat(3,1fr);gap:14px;margin-bottom:20px}
+.risk-card{background:var(--card);border:1px solid var(--border);border-radius:8px;padding:16px;text-align:center}
+.risk-val{font-family:var(--mono);font-size:22px;font-weight:bold;margin:8px 0}
+.risk-lbl{font-size:10px;color:var(--muted);text-transform:uppercase;letter-spacing:1.5px}
+.scenario-row{display:flex;gap:10px;margin-bottom:20px;align-items:center}
+.scenario-sel{background:var(--card);border:1px solid var(--border);border-radius:6px;color:var(--text);font-size:13px;padding:10px 14px;flex:1;max-width:300px;cursor:pointer}
+.scenario-sel:focus{outline:none;border-color:var(--blue)}
+
+/* ── Chat bubble ── */
+.chat-bubble{background:#1c2128;border:1px solid var(--border);border-radius:0 12px 12px 12px;padding:18px 20px;font-size:13px;line-height:1.85;color:var(--text);white-space:pre-wrap;position:relative}
+.chat-label{font-size:10px;color:var(--blue);font-weight:700;letter-spacing:1.5px;text-transform:uppercase;margin-bottom:12px}
+
+/* ── Sector bars ── */
+.sector-row{display:flex;align-items:center;gap:10px;margin-bottom:8px;font-size:12px}
+.sector-name{width:170px;color:var(--muted);flex-shrink:0}
+.sector-track{flex:1;height:5px;background:var(--border);border-radius:3px;overflow:hidden}
+.sector-fill{height:100%;background:var(--blue);border-radius:3px;transition:width .6s}
+.sector-pct{width:45px;text-align:right;font-family:var(--mono);font-size:11px;color:var(--muted)}
+
+/* ── RAG upload ── */
+.upload-area{border:2px dashed var(--border);border-radius:8px;padding:40px;text-align:center;cursor:pointer;transition:border-color .15s;margin-bottom:14px}
+.upload-area:hover,.upload-area.drag{border-color:var(--blue)}
+.upload-area input{display:none}
+.upload-icon{font-size:32px;margin-bottom:10px;opacity:.4}
+.upload-text{font-size:13px;color:var(--muted)}
+.upload-fn{font-family:var(--mono);font-size:11px;color:var(--green);margin-top:6px}
+.q-row{display:flex;gap:10px;margin-bottom:14px}
+.q-input{flex:1}
+
+/* ── States ── */
+.empty{text-align:center;padding:60px 20px;color:var(--muted)}
+.empty-icon{font-size:40px;margin-bottom:12px;opacity:.3}
+.empty-text{font-size:13px}
+.err-box{background:rgba(255,77,79,.1);border:1px solid rgba(255,77,79,.3);border-radius:6px;padding:11px 14px;font-size:13px;color:var(--red);margin-bottom:14px}
+
+/* ── Spinner ── */
+@keyframes spin{to{transform:rotate(360deg)}}
+.spin{display:inline-block;width:13px;height:13px;border:2px solid rgba(255,255,255,.15);border-top-color:var(--text);border-radius:50%;animation:spin .7s linear infinite;vertical-align:middle;margin-right:6px}
+
+/* ── Misc ── */
+.g{color:var(--green)}.r{color:var(--red)}.b{color:var(--blue)}.y{color:var(--yellow)}
+.section-title{font-size:14px;font-weight:600;margin-bottom:14px;color:var(--text)}
+hr{border:none;border-top:1px solid var(--border);margin:20px 0}
+::-webkit-scrollbar{width:5px}::-webkit-scrollbar-track{background:transparent}
+::-webkit-scrollbar-thumb{background:var(--border);border-radius:3px}
+</style>
+</head>
+<body>
+
+<header>
+  <div class="logo">▸ EQUITY RESEARCH</div>
+  <div class="hdr-right">
+    <div class="hdr-chip"><span class="dot" id="api-dot"></span><span id="api-status">连接中...</span></div>
+    <div class="hdr-chip" style="color:var(--muted)">2026-05-04</div>
+  </div>
+</header>
+
+<div class="layout">
+
+  <!-- ═══ Sidebar ═══ -->
+  <aside class="sidebar">
+    <div class="sb-head">持仓总览</div>
+    <div id="sb-summary">
+      <div style="padding:14px 16px">
+        <div class="sk sk-line sk-sm" style="margin-bottom:10px"></div>
+        <div class="sk sk-line sk-lg" style="margin-bottom:6px"></div>
+        <div class="sk sk-line sk-md"></div>
+      </div>
+    </div>
+    <div class="sb-positions" id="sb-positions">
+      <div style="padding:16px">
+        <div class="sk sk-card"></div>
+        <div class="sk sk-card"></div>
+        <div class="sk sk-card"></div>
+      </div>
+    </div>
+    <div class="sb-foot" id="sb-foot">加载中...</div>
+  </aside>
+
+  <!-- ═══ Main ═══ -->
+  <main class="main">
+    <div class="tab-bar">
+      <button class="tab-btn active" onclick="switchTab('analyze')">个股分析</button>
+      <button class="tab-btn" onclick="switchTab('rag')">财报解读</button>
+      <button class="tab-btn" onclick="switchTab('debate')">多空辩论</button>
+      <button class="tab-btn" onclick="switchTab('advisor')">持仓顾问</button>
+    </div>
+
+    <div class="tab-content">
+
+      <!-- ── Tab 1: 个股分析 ── -->
+      <div class="tab-panel active" id="panel-analyze">
+        <div class="search-row">
+          <input class="input ticker-input" id="analyze-ticker" placeholder="Ticker" maxlength="10"
+            oninput="onTickerInput(this.value,'analyze-badge')"
+            onkeydown="if(event.key==='Enter')runAnalysis()">
+          <button class="btn btn-primary" id="analyze-btn" onclick="runAnalysis()">分析</button>
+          <div id="analyze-badge"></div>
+        </div>
+        <div id="analyze-content">
+          <div class="empty">
+            <div class="empty-icon">📈</div>
+            <div class="empty-text">输入股票代码开始基本面 · 情绪 · 技术面分析</div>
+          </div>
+        </div>
+      </div>
+
+      <!-- ── Tab 2: 财报解读 ── -->
+      <div class="tab-panel" id="panel-rag">
+        <div class="section-title">上传财报 PDF 进行解读</div>
+        <label class="upload-area" id="upload-area" ondragover="onDrag(event,true)" ondragleave="onDrag(event,false)" ondrop="onDrop(event)">
+          <input type="file" id="rag-file" accept=".pdf" onchange="onFileSelect(this)">
+          <div class="upload-icon">📄</div>
+          <div class="upload-text">点击选择 PDF 文件，或将文件拖到此处</div>
+          <div class="upload-fn" id="upload-fn"></div>
+        </label>
+        <div class="q-row">
+          <input class="input q-input" id="rag-question" placeholder="输入问题，例如：公司毛利率趋势如何？" onkeydown="if(event.key==='Enter')runRag()">
+          <button class="btn btn-primary" id="rag-btn" onclick="runRag()">解读</button>
+        </div>
+        <div id="rag-content">
+          <div class="err-box" style="display:none" id="rag-coming">⚠ RAG 接口暂未开放，请先创建 /rag 端点</div>
+          <div class="empty">
+            <div class="empty-icon">🔍</div>
+            <div class="empty-text">上传财报 PDF 并提问，AI 将基于文档内容作答</div>
+          </div>
+        </div>
+      </div>
+
+      <!-- ── Tab 3: 多空辩论 ── -->
+      <div class="tab-panel" id="panel-debate">
+        <div class="search-row">
+          <input class="input ticker-input" id="debate-ticker" placeholder="Ticker" maxlength="10"
+            oninput="onTickerInput(this.value,'debate-badge')"
+            onkeydown="if(event.key==='Enter')runDebate()">
+          <button class="btn btn-primary" id="debate-btn" onclick="runDebate()">开始辩论</button>
+          <div id="debate-badge"></div>
+        </div>
+        <div id="debate-content">
+          <div class="empty">
+            <div class="empty-icon">⚔️</div>
+            <div class="empty-text">多头 vs 空头 · 两轮辩论 · 裁判裁决</div>
+          </div>
+        </div>
+      </div>
+
+      <!-- ── Tab 4: 持仓顾问 ── -->
+      <div class="tab-panel" id="panel-advisor">
+        <div id="risk-cards">
+          <div class="risk-grid">
+            <div class="risk-card"><div class="sk sk-card" style="height:70px"></div></div>
+            <div class="risk-card"><div class="sk sk-card" style="height:70px"></div></div>
+            <div class="risk-card"><div class="sk sk-card" style="height:70px"></div></div>
+          </div>
+        </div>
+        <div id="sector-chart" style="margin-bottom:20px"></div>
+        <div class="scenario-row">
+          <select class="scenario-sel" id="scenario-sel" onchange="onScenarioChange()">
+            <option value="">选择宏观情景...</option>
+            <option value="美联储持续加息，利率维持高位">美联储持续加息</option>
+            <option value="科技股估值泡沫破裂，纳指大幅回调">科技股泡沫破裂</option>
+            <option value="美国经济衰退，GDP连续两季度负增长">经济衰退</option>
+            <option value="地缘政治危机升级，避险情绪急剧上升">地缘政治危机</option>
+            <option value="美元指数大幅走强，新兴市场承压">美元走强</option>
+            <option value="custom">自定义情景...</option>
+          </select>
+          <input class="input" id="scenario-custom" placeholder="描述宏观情景..." style="display:none;flex:1">
+          <button class="btn btn-primary" id="advisor-btn" onclick="runAdvisor()">获取建议</button>
+        </div>
+        <div id="advisor-content">
+          <div class="empty">
+            <div class="empty-icon">🤖</div>
+            <div class="empty-text">选择宏观情景，AI 顾问将结合你的实际持仓给出个性化建议</div>
+          </div>
+        </div>
+      </div>
+
+    </div><!-- /tab-content -->
+  </main>
+</div>
+
+<script>
+const API = window.location.hostname === 'localhost' ? 'http://localhost:8000' : '';
+
+// ── State ─────────────────────────────────────────────────────────────────
+let portfolio = null; // GET /portfolio response
+let cache = {};       // { TICKER: { fundamental, sentiment, technical, synthesis } }
+
+// ── Bootstrap ─────────────────────────────────────────────────────────────
+window.addEventListener('DOMContentLoaded', () => {
+  checkApi();
+  loadPortfolio();
+});
+
+async function checkApi() {
+  try {
+    const r = await fetch(`${API}/portfolio`, { signal: AbortSignal.timeout(3000) });
+    if (r.ok) setApiStatus(true);
+    else setApiStatus(false);
+  } catch { setApiStatus(false); }
+}
+
+function setApiStatus(ok) {
+  document.getElementById('api-dot').className = 'dot' + (ok ? '' : ' red');
+  document.getElementById('api-status').textContent = ok ? 'API 已连接' : 'API 离线';
+}
+
+// ── Portfolio ──────────────────────────────────────────────────────────────
+async function loadPortfolio() {
+  try {
+    const r = await fetch(`${API}/portfolio`);
+    const data = await r.json();
+    if (data.error) throw new Error(data.error);
+    portfolio = data;
+    renderSidebar(data);
+    renderRiskCards(data);
+    renderSectorChart(data);
+  } catch (e) {
+    document.getElementById('sb-positions').innerHTML =
+      `<div style="padding:16px;font-size:12px;color:var(--red)">加载失败: ${e.message}</div>`;
+  }
+}
+
+function renderSidebar(data) {
+  const s = data.summary;
+  const topW = data.concentration_risk.max_single_position;
+
+  document.getElementById('sb-summary').innerHTML = `
+    <div class="sb-summary">
+      <div class="sb-total">$${fmt(s.total_value)}</div>
+      <div class="sb-meta">
+        现金 $${fmt(s.cash)} &nbsp;·&nbsp; ${(s.cash_ratio*100).toFixed(1)}%
+        &nbsp;·&nbsp; <span class="${riskColor(s.risk_preference)}">${s.risk_preference}</span>
+      </div>
+    </div>`;
+
+  const maxW = Math.max(...data.positions.map(p => p.weight));
+  document.getElementById('sb-positions').innerHTML = data.positions.map(p => {
+    const pos = p.unrealized_pnl_pct >= 0;
+    const pctStr = (pos ? '+' : '') + p.unrealized_pnl_pct.toFixed(1) + '%';
+    const barW = Math.round((p.weight / maxW) * 100);
+    return `
+    <div class="pos-item" onclick="jumpToAnalyze('${p.ticker}')">
+      <div class="pos-r1">
+        <span class="pos-ticker">${p.ticker}</span>
+        <span class="pos-pnl ${pos?'g':'r'}">${pctStr}</span>
+      </div>
+      <div class="pos-r2">
+        <span class="pos-sector">${p.sector}</span>
+        <span class="pos-weight">${(p.weight*100).toFixed(1)}%</span>
+      </div>
+      <div class="pos-bar">
+        <div class="pos-bar-fill" style="width:${barW}%;background:${pos?'var(--green)':'var(--red)'}"></div>
+      </div>
+    </div>`;
+  }).join('');
+
+  document.getElementById('sb-foot').textContent =
+    `PE均值 ${s.avg_holding_pe.toFixed(1)} · ${s.num_positions} 支持仓`;
+}
+
+function riskColor(r) {
+  return r === 'aggressive' ? 'r' : r === 'conservative' ? 'g' : 'b';
+}
+
+// ── Risk cards (advisor tab) ───────────────────────────────────────────────
+function renderRiskCards(data) {
+  const cr = data.concentration_risk;
+  const sr = data.sector_risk;
+  const s  = data.summary;
+
+  const conc = (cr.max_single_position * 100).toFixed(1);
+  const concColor = cr.max_single_position > 0.2 ? 'r' : cr.max_single_position > 0.12 ? 'y' : 'g';
+
+  const hhi = sr.hhi.toFixed(3);
+  const hhiColor = sr.hhi > 0.25 ? 'r' : sr.hhi > 0.15 ? 'y' : 'g';
+
+  document.getElementById('risk-cards').innerHTML = `
+    <div class="risk-grid">
+      <div class="risk-card">
+        <div class="risk-lbl">最大单仓占比</div>
+        <div class="risk-val ${concColor}">${conc}%</div>
+        <div style="font-size:11px;color:var(--muted)">${cr.alerts[0] || '集中度正常'}</div>
+      </div>
+      <div class="risk-card">
+        <div class="risk-lbl">行业集中度 HHI</div>
+        <div class="risk-val ${hhiColor}">${hhi}</div>
+        <div style="font-size:11px;color:var(--muted)">${sr.concentration_level}</div>
+      </div>
+      <div class="risk-card">
+        <div class="risk-lbl">风险偏好</div>
+        <div class="risk-val ${riskColor(s.risk_preference)}">${s.risk_preference.toUpperCase()}</div>
+        <div style="font-size:11px;color:var(--muted)">持仓数 ${s.num_positions} · PE ${s.avg_holding_pe.toFixed(1)}</div>
+      </div>
+    </div>`;
+}
+
+function renderSectorChart(data) {
+  if (!data) return;
+  const sw = data.sector_risk.sector_weights;
+  const sorted = Object.entries(sw).sort((a,b) => b[1]-a[1]);
+  const max = sorted[0]?.[1] || 1;
+  document.getElementById('sector-chart').innerHTML =
+    `<div class="section-title" style="font-size:12px;color:var(--muted);letter-spacing:1px;text-transform:uppercase;margin-bottom:10px">行业分布</div>` +
+    sorted.map(([sec, w]) => `
+    <div class="sector-row">
+      <div class="sector-name">${sec}</div>
+      <div class="sector-track"><div class="sector-fill" style="width:${(w/max*100).toFixed(0)}%"></div></div>
+      <div class="sector-pct">${(w*100).toFixed(1)}%</div>
+    </div>`).join('');
+}
+
+// ── Tab switching ──────────────────────────────────────────────────────────
+function switchTab(name) {
+  document.querySelectorAll('.tab-btn').forEach((b,i) => {
+    const names = ['analyze','rag','debate','advisor'];
+    b.classList.toggle('active', names[i] === name);
+  });
+  document.querySelectorAll('.tab-panel').forEach(p => p.classList.remove('active'));
+  document.getElementById('panel-'+name).classList.add('active');
+}
+
+// ── Portfolio badge helper ────────────────────────────────────────────────
+function onTickerInput(val, badgeId) {
+  val = val.trim().toUpperCase();
+  const el = document.getElementById(badgeId);
+  if (!portfolio || !val) { el.innerHTML = ''; return; }
+  const p = portfolio.positions.find(x => x.ticker === val);
+  if (!p) { el.innerHTML = ''; return; }
+  const pos = p.unrealized_pnl_pct >= 0;
+  el.innerHTML = `
+    <div class="pos-badge">
+      <span class="badge-lbl">持仓</span>
+      <span style="font-weight:bold">${p.ticker}</span>
+      <span class="${pos?'g':'r'}">${pos?'+':''}${p.unrealized_pnl_pct.toFixed(1)}%</span>
+      <span class="badge-lbl">${(p.weight*100).toFixed(1)}% 仓</span>
+    </div>`;
+}
+
+function jumpToAnalyze(ticker) {
+  switchTab('analyze');
+  document.getElementById('analyze-ticker').value = ticker;
+  onTickerInput(ticker, 'analyze-badge');
+  runAnalysis();
+}
+
+// ── Tab 1: Analyze ────────────────────────────────────────────────────────
+async function runAnalysis() {
+  const raw = document.getElementById('analyze-ticker').value.trim().toUpperCase();
+  if (!raw) return;
+  const ticker = raw;
+
+  setBtn('analyze-btn', true, '分析中...');
+  showAnalysisSkeleton();
+
+  try {
+    const res = await apiFetch('POST', `/analyze/${ticker}`);
+    if (res.error) throw new Error(res.error);
+    cache[ticker] = res;
+    renderAnalysis(ticker, res);
+  } catch (e) {
+    document.getElementById('analyze-content').innerHTML = errBox(e.message);
+  } finally {
+    setBtn('analyze-btn', false, '分析');
+  }
+}
+
+function showAnalysisSkeleton() {
+  document.getElementById('analyze-content').innerHTML = `
+    <div class="analysis-grid">
+      ${[1,2,3].map(() => `
+      <div class="a-card">
+        <div class="sk sk-line sk-sm" style="margin-bottom:14px"></div>
+        <div class="sk sk-line sk-md" style="height:32px;margin-bottom:10px"></div>
+        <div class="sk sk-line sk-lg"></div>
+        <div class="sk sk-line sk-md"></div>
+      </div>`).join('')}
+    </div>
+    <div class="sk sk-card" style="height:100px"></div>`;
+}
+
+function renderAnalysis(ticker, data) {
+  const fundamental = data.fundamental || '';
+  const sentiment   = data.sentiment   || '';
+  const technical   = data.technical   || '';
+  const synthesis   = data.synthesis   || '';
+
+  const grade = extractGrade(fundamental);
+  const sentScore = extractSentScore(sentiment);
+  const techSignal = extractTechSignal(technical);
+
+  const gradeColor = grade === 'A' ? 'g' : grade === 'B' ? 'b' : grade === 'C' ? 'y' : grade === 'D' ? 'r' : 'b';
+
+  document.getElementById('analyze-content').innerHTML = `
+    <div class="analysis-grid">
+      <div class="a-card">
+        <div class="a-card-title">基本面</div>
+        <div class="a-card-grade ${gradeColor}">${grade || '—'}</div>
+        <div class="a-card-summary">${firstLine(fundamental, 80)}</div>
+      </div>
+      <div class="a-card">
+        <div class="a-card-title">情绪分析</div>
+        <div class="a-card-grade" style="color:${sentScore>=0?'var(--green)':'var(--red)'}">${sentScore >= 0 ? '+' : ''}${sentScore}</div>
+        <div class="a-card-summary">${firstLine(sentiment, 80)}</div>
+      </div>
+      <div class="a-card">
+        <div class="a-card-title">技术面</div>
+        <div class="a-card-grade" style="font-size:18px;padding-top:6px;color:var(--blue)">${techSignal}</div>
+        <div class="a-card-summary">${firstLine(technical, 80)}</div>
+      </div>
+    </div>
+
+    ${synthesis ? `
+    <div class="synthesis">
+      <div class="synthesis-lbl">综合研究报告</div>
+      <div class="analysis-text">${esc(synthesis)}</div>
+    </div>` : ''}
+
+    ${expandable('基本面详细分析', fundamental)}
+    ${expandable('情绪与新闻分析', sentiment)}
+    ${expandable('技术面详细分析', technical)}
+  `;
+}
+
+function expandable(title, text) {
+  const id = 'expd-' + Math.random().toString(36).slice(2);
+  return `
+    <div class="expd">
+      <div class="expd-hd" onclick="toggleExpand('${id}')">
+        <span class="expd-title">${title}</span>
+        <span class="expd-arrow" id="arr-${id}">▼</span>
+      </div>
+      <div class="expd-body" id="${id}">
+        <div class="analysis-text">${esc(text)}</div>
+      </div>
+    </div>`;
+}
+
+function toggleExpand(id) {
+  const body = document.getElementById(id);
+  const arr  = document.getElementById('arr-' + id);
+  const open = body.classList.toggle('open');
+  arr.classList.toggle('open', open);
+}
+
+// ── Tab 2: RAG ────────────────────────────────────────────────────────────
+let ragFile = null;
+
+function onFileSelect(input) {
+  ragFile = input.files[0] || null;
+  document.getElementById('upload-fn').textContent = ragFile ? '✓ ' + ragFile.name : '';
+}
+
+function onDrag(e, over) {
+  e.preventDefault();
+  document.getElementById('upload-area').classList.toggle('drag', over);
+}
+
+function onDrop(e) {
+  e.preventDefault();
+  onDrag(e, false);
+  const f = e.dataTransfer.files[0];
+  if (f && f.type === 'application/pdf') {
+    ragFile = f;
+    document.getElementById('upload-fn').textContent = '✓ ' + f.name;
+  }
+}
+
+async function runRag() {
+  document.getElementById('rag-content').innerHTML =
+    `<div class="err-box">⚠ /rag 接口尚未创建，请先在 api.py 中添加该端点</div>`;
+}
+
+// ── Tab 3: Debate ─────────────────────────────────────────────────────────
+async function runDebate() {
+  const raw = document.getElementById('debate-ticker').value.trim().toUpperCase();
+  if (!raw) return;
+
+  setBtn('debate-btn', true, '辩论中...');
+  showDebateProgress();
+
+  try {
+    // Step 1: get analysis (use cache if available)
+    let analysis = cache[raw];
+    if (!analysis) {
+      setStep(0, 'active');
+      const res = await apiFetch('POST', `/analyze/${raw}`);
+      if (res.error) throw new Error(res.error);
+      analysis = res;
+      cache[raw] = res;
+    }
+    setStep(0, 'done');
+
+    // Step 2: run debate
+    setStep(1, 'active');
+    const debate = await apiFetch('POST', `/debate/${raw}`, {
+      fundamental: analysis.fundamental,
+      sentiment:   analysis.sentiment,
+      technical:   analysis.technical,
+    });
+    if (debate.error) throw new Error(debate.error);
+    setStep(1, 'done');
+
+    // Step 3: render
+    setStep(2, 'active');
+    await delay(300);
+    setStep(2, 'done');
+    renderDebate(debate);
+  } catch (e) {
+    document.getElementById('debate-content').innerHTML = errBox(e.message);
+  } finally {
+    setBtn('debate-btn', false, '开始辩论');
+  }
+}
+
+function showDebateProgress() {
+  document.getElementById('debate-content').innerHTML = `
+    <div class="progress-wrap">
+      ${['收集基本面 · 情绪 · 技术面数据','多头立论 & 空头立论 → 双方反驳','裁判综合裁决'].map((s,i) => `
+      <div class="step" id="step-${i}">
+        <div class="step-dot" id="dot-${i}"></div>
+        <span>${s}</span>
+      </div>`).join('')}
+    </div>`;
+}
+
+function setStep(i, state) {
+  const dot  = document.getElementById(`dot-${i}`);
+  const step = document.getElementById(`step-${i}`);
+  if (!dot) return;
+  dot.className = 'step-dot ' + state;
+  if (state === 'done') step.classList.add('done-step');
+}
+
+function renderDebate(d) {
+  document.getElementById('debate-content').innerHTML = `
+    <div class="debate-grid">
+      <div class="card debate-bull">
+        <div class="debate-lbl g">▲ 多头立论</div>
+        <div class="analysis-text">${esc(d.bull_case)}</div>
+        <div style="margin-top:12px;padding-top:12px;border-top:1px solid var(--border)">
+          <div class="debate-lbl g" style="font-size:9px">多头反驳</div>
+          <div class="analysis-text" style="font-size:12px">${esc(d.bull_rebuttal)}</div>
+        </div>
+      </div>
+      <div class="card debate-bear">
+        <div class="debate-lbl r">▼ 空头立论</div>
+        <div class="analysis-text">${esc(d.bear_case)}</div>
+        <div style="margin-top:12px;padding-top:12px;border-top:1px solid var(--border)">
+          <div class="debate-lbl r" style="font-size:9px">空头反驳</div>
+          <div class="analysis-text" style="font-size:12px">${esc(d.bear_rebuttal)}</div>
+        </div>
+      </div>
+    </div>
+    <div class="debate-verdict">
+      <div class="verdict-lbl">⚖ 裁判裁决</div>
+      <div class="analysis-text">${esc(d.verdict)}</div>
+    </div>`;
+}
+
+// ── Tab 4: Advisor ────────────────────────────────────────────────────────
+function onScenarioChange() {
+  const sel = document.getElementById('scenario-sel').value;
+  const custom = document.getElementById('scenario-custom');
+  custom.style.display = sel === 'custom' ? 'block' : 'none';
+}
+
+async function runAdvisor() {
+  const sel = document.getElementById('scenario-sel').value;
+  const custom = document.getElementById('scenario-custom').value.trim();
+  const scenario = sel === 'custom' ? custom : sel;
+
+  setBtn('advisor-btn', true, '分析中...');
+  document.getElementById('advisor-content').innerHTML =
+    `<div style="padding:20px 0;color:var(--muted);font-size:13px"><span class="spin"></span>AI 顾问正在分析你的持仓...</div>`;
+
+  try {
+    const res = await apiFetch('POST', '/advisor', { scenario });
+    if (res.error) throw new Error(res.error);
+    document.getElementById('advisor-content').innerHTML = `
+      <div class="chat-label">AI 顾问</div>
+      <div class="chat-bubble">${esc(res.analysis)}</div>`;
+  } catch (e) {
+    document.getElementById('advisor-content').innerHTML = errBox(e.message);
+  } finally {
+    setBtn('advisor-btn', false, '获取建议');
+  }
+}
+
+// ── Utilities ─────────────────────────────────────────────────────────────
+async function apiFetch(method, path, body) {
+  const opts = { method, headers: { 'Content-Type': 'application/json' } };
+  if (body) opts.body = JSON.stringify(body);
+  const r = await fetch(API + path, opts);
+  return r.json();
+}
+
+function setBtn(id, disabled, text) {
+  const b = document.getElementById(id);
+  b.disabled = disabled;
+  b.innerHTML = disabled ? `<span class="spin"></span>${text}` : text;
+}
+
+function errBox(msg) {
+  return `<div class="err-box">⚠ ${esc(msg)}</div>`;
+}
+
+function esc(s) {
+  return (s || '').replace(/&/g,'&amp;').replace(/</g,'&lt;').replace(/>/g,'&gt;');
+}
+
+function fmt(n) {
+  return Number(n).toLocaleString('en-US', { maximumFractionDigits: 0 });
+}
+
+function firstLine(text, maxLen) {
+  const line = (text || '').split('\n').find(l => l.trim()) || '';
+  return esc(line.length > maxLen ? line.slice(0, maxLen) + '…' : line);
+}
+
+function extractGrade(text) {
+  const m = (text || '').match(/基本面评级\s*[：:]\s*([ABCD])/i)
+         || (text || '').match(/评级\s*[：:]\s*([ABCD])/i)
+         || (text || '').match(/([ABCD])$/m);
+  return m ? m[1].toUpperCase() : '—';
+}
+
+function extractSentScore(text) {
+  const m = (text || '').match(/总分\s*[：:]?\s*([+-]?\d+)/);
+  if (m) return parseInt(m[1]);
+  const pos = (text || '').match(/[+＋](\d+)/g) || [];
+  const neg = (text || '').match(/-(\d+)/g) || [];
+  const sum = pos.reduce((a,v) => a + parseInt(v), 0) + neg.reduce((a,v) => a + parseInt(v), 0);
+  return sum || 0;
+}
+
+function extractTechSignal(text) {
+  const t = text || '';
+  if (/超卖|强势反弹|看涨|做多|买入信号/.test(t)) return '看涨';
+  if (/超买|看跌|做空|卖出信号|回调风险/.test(t)) return '看跌';
+  if (/中性|观望|震荡|盘整/.test(t)) return '中性';
+  return '观察';
+}
+
+function delay(ms) { return new Promise(r => setTimeout(r, ms)); }
+</script>
+</body>
+</html>
