@@ -11,8 +11,8 @@ sys.path.insert(0, str(Path(__file__).parent.parent))
 from data.stock_data import get_news, get_stock_data
 from models.schemas import InvestorProfile
 
-_MODEL = "claude-opus-4-5"
-_MAX_TOKENS = 800
+_MODEL = "claude-sonnet-4-6"
+_MAX_TOKENS = 2000
 
 _client = anthropic.AsyncAnthropic(api_key=os.getenv("ANTHROPIC_API_KEY"))
 

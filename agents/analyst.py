@@ -6,8 +6,8 @@ from dotenv import load_dotenv
 
 load_dotenv()
 
-_MODEL = "claude-opus-4-5"
-_MAX_TOKENS = 600
+_MODEL = "claude-sonnet-4-6"
+_MAX_TOKENS = 2000
 
 _client = anthropic.AsyncAnthropic(api_key=os.getenv("ANTHROPIC_API_KEY"))
 
@@ -90,7 +90,7 @@ async def _synthesis_agent(ticker: str, fundamental: str, sentiment: str, techni
     )
     response = await _client.messages.create(
         model=_MODEL,
-        max_tokens=2000,
+        max_tokens=4000,
         system=system,
         messages=[{"role": "user", "content": user}],
     )

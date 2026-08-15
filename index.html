@@ -171,6 +171,19 @@ hr{border:none;border-top:1px solid var(--border);margin:20px 0}
 ::-webkit-scrollbar{width:5px}::-webkit-scrollbar-track{background:transparent}
 ::-webkit-scrollbar-thumb{background:var(--border);border-radius:3px}
 </style>
+<script src="https://cdn.jsdelivr.net/npm/marked/marked.min.js"></script>
+<style>
+/* markdown rendered content */
+.md-body{font-size:13px;line-height:1.8;color:var(--muted)}
+.md-body h1,.md-body h2,.md-body h3{color:var(--text);font-size:13px;font-weight:700;margin:14px 0 6px}
+.md-body h1{font-size:14px}
+.md-body strong{color:var(--text);font-weight:600}
+.md-body ul,.md-body ol{padding-left:18px;margin:6px 0}
+.md-body li{margin-bottom:4px}
+.md-body p{margin:6px 0}
+.md-body hr{border:none;border-top:1px solid var(--border);margin:12px 0}
+.md-body code{font-family:var(--mono);font-size:12px;background:#21262d;padding:1px 5px;border-radius:3px;color:var(--blue)}
+</style>
 </head>
 <body>
 
@@ -235,6 +248,10 @@ hr{border:none;border-top:1px solid var(--border);margin:20px 0}
       <!-- ── Tab 2: 财报解读 ── -->
       <div class="tab-panel" id="panel-rag">
         <div class="section-title">上传财报 PDF 进行解读</div>
+        <div class="search-row" style="margin-bottom:12px">
+          <input class="input ticker-input" id="rag-ticker" placeholder="Ticker" maxlength="10"
+            oninput="this.value=this.value.toUpperCase()">
+        </div>
         <label class="upload-area" id="upload-area" ondragover="onDrag(event,true)" ondragleave="onDrag(event,false)" ondrop="onDrop(event)">
           <input type="file" id="rag-file" accept=".pdf" onchange="onFileSelect(this)">
           <div class="upload-icon">📄</div>
@@ -246,10 +263,9 @@ hr{border:none;border-top:1px solid var(--border);margin:20px 0}
           <button class="btn btn-primary" id="rag-btn" onclick="runRag()">解读</button>
         </div>
         <div id="rag-content">
-          <div class="err-box" style="display:none" id="rag-coming">⚠ RAG 接口暂未开放，请先创建 /rag 端点</div>
           <div class="empty">
             <div class="empty-icon">🔍</div>
-            <div class="empty-text">上传财报 PDF 并提问，AI 将基于文档内容作答</div>
+            <div class="empty-text">输入 Ticker，上传财报 PDF，提问后 AI 将基于文档内容作答</div>
           </div>
         </div>
       </div>
@@ -540,7 +556,7 @@ function renderAnalysis(ticker, data) {
     ${synthesis ? `
     <div class="synthesis">
       <div class="synthesis-lbl">综合研究报告</div>
-      <div class="analysis-text">${esc(synthesis)}</div>
+      ${md(synthesis)}
     </div>` : ''}
 
     ${expandable('基本面详细分析', fundamental)}
@@ -557,8 +573,8 @@ function expandable(title, text) {
         <span class="expd-title">${title}</span>
         <span class="expd-arrow" id="arr-${id}">▼</span>
       </div>
-      <div class="expd-body" id="${id}">
-        <div class="analysis-text">${esc(text)}</div>
+      <div class="expd-body" id="${id}" style="padding:0 16px 16px">
+        ${md(text)}
       </div>
     </div>`;
 }
@@ -594,8 +610,39 @@ function onDrop(e) {
 }
 
 async function runRag() {
+  const ticker = document.getElementById('rag-ticker').value.trim().toUpperCase();
+  const question = document.getElementById('rag-question').value.trim();
+  if (!ticker) { alert('请输入 Ticker'); return; }
+  if (!question) { alert('请输入问题'); return; }
+
+  setBtn('rag-btn', true, '解读中...');
   document.getElementById('rag-content').innerHTML =
-    `<div class="err-box">⚠ /rag 接口尚未创建，请先在 api.py 中添加该端点</div>`;
+    `<div style="padding:20px 0;color:var(--muted);font-size:13px"><span class="spin"></span>正在处理...</div>`;
+
+  try {
+    // 如果有新文件先上传
+    if (ragFile) {
+      const form = new FormData();
+      form.append('ticker', ticker);
+      form.append('file', ragFile);
+      const up = await fetch(`${API}/rag/upload`, { method: 'POST', body: form });
+      const upData = await up.json();
+      if (upData.error) throw new Error(upData.error);
+      ragFile = null;
+      document.getElementById('upload-fn').textContent = `✓ 已索引 ${upData.chunks} 个段落`;
+    }
+
+    // 查询
+    const res = await apiFetch('POST', '/rag/query', { ticker, question });
+    if (res.error) throw new Error(res.error);
+    document.getElementById('rag-content').innerHTML = `
+      <div class="chat-label">财报解读</div>
+      <div class="chat-bubble">${md(res.answer)}</div>`;
+  } catch (e) {
+    document.getElementById('rag-content').innerHTML = errBox(e.message);
+  } finally {
+    setBtn('rag-btn', false, '解读');
+  }
 }
 
 // ── Tab 3: Debate ─────────────────────────────────────────────────────────
@@ -664,24 +711,24 @@ function renderDebate(d) {
     <div class="debate-grid">
       <div class="card debate-bull">
         <div class="debate-lbl g">▲ 多头立论</div>
-        <div class="analysis-text">${esc(d.bull_case)}</div>
+        ${md(d.bull_case)}
         <div style="margin-top:12px;padding-top:12px;border-top:1px solid var(--border)">
           <div class="debate-lbl g" style="font-size:9px">多头反驳</div>
-          <div class="analysis-text" style="font-size:12px">${esc(d.bull_rebuttal)}</div>
+          ${md(d.bull_rebuttal)}
         </div>
       </div>
       <div class="card debate-bear">
         <div class="debate-lbl r">▼ 空头立论</div>
-        <div class="analysis-text">${esc(d.bear_case)}</div>
+        ${md(d.bear_case)}
         <div style="margin-top:12px;padding-top:12px;border-top:1px solid var(--border)">
           <div class="debate-lbl r" style="font-size:9px">空头反驳</div>
-          <div class="analysis-text" style="font-size:12px">${esc(d.bear_rebuttal)}</div>
+          ${md(d.bear_rebuttal)}
         </div>
       </div>
     </div>
     <div class="debate-verdict">
       <div class="verdict-lbl">⚖ 裁判裁决</div>
-      <div class="analysis-text">${esc(d.verdict)}</div>
+      ${md(d.verdict)}
     </div>`;
 }
 
@@ -706,7 +753,7 @@ async function runAdvisor() {
     if (res.error) throw new Error(res.error);
     document.getElementById('advisor-content').innerHTML = `
       <div class="chat-label">AI 顾问</div>
-      <div class="chat-bubble">${esc(res.analysis)}</div>`;
+      <div class="chat-bubble">${md(res.analysis)}</div>`;
   } catch (e) {
     document.getElementById('advisor-content').innerHTML = errBox(e.message);
   } finally {
@@ -734,6 +781,10 @@ function errBox(msg) {
 
 function esc(s) {
   return (s || '').replace(/&/g,'&amp;').replace(/</g,'&lt;').replace(/>/g,'&gt;');
+}
+
+function md(s) {
+  return `<div class="md-body">${marked.parse(s || '')}</div>`;
 }
 
 function fmt(n) {

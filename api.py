@@ -1,7 +1,11 @@
+import os
+import tempfile
 from dataclasses import asdict
 from pathlib import Path
 
-from fastapi import FastAPI
+import anthropic
+from dotenv import load_dotenv
+from fastapi import FastAPI, File, Form, UploadFile
 from fastapi.middleware.cors import CORSMiddleware
 from fastapi.responses import FileResponse
 from pydantic import BaseModel
@@ -16,6 +20,10 @@ from data.portfolio.risk_analyzer import (
     analyze_sector_risk,
     build_investor_profile,
 )
+from data.rag import load_and_chunk_pdf, query_filings, store_chunks
+
+load_dotenv()
+_rag_client = anthropic.AsyncAnthropic(api_key=os.getenv("ANTHROPIC_API_KEY"))
 
 app = FastAPI(title="股票投研助手 API")
 
@@ -135,5 +143,56 @@ async def advisor(body: AdvisorRequest):
             scenario=body.scenario or None,
         )
         return {"analysis": text}
+    except Exception as e:
+        return {"error": str(e)}
+
+
+# ── /rag/upload ───────────────────────────────────────────────────────────────
+
+@app.post("/rag/upload")
+async def rag_upload(ticker: str = Form(...), file: UploadFile = File(...)):
+    try:
+        ticker = ticker.strip().upper()
+        suffix = Path(file.filename).suffix or ".pdf"
+        with tempfile.NamedTemporaryFile(delete=False, suffix=suffix) as tmp:
+            tmp.write(await file.read())
+            tmp_path = tmp.name
+        chunks = load_and_chunk_pdf(tmp_path, ticker)
+        Path(tmp_path).unlink(missing_ok=True)
+        store_chunks(ticker, chunks)
+        return {"ticker": ticker, "chunks": len(chunks)}
+    except Exception as e:
+        return {"error": str(e)}
+
+
+# ── /rag/query ────────────────────────────────────────────────────────────────
+
+class RagQueryRequest(BaseModel):
+    ticker: str
+    question: str
+
+
+@app.post("/rag/query")
+async def rag_query(body: RagQueryRequest):
+    try:
+        ticker = body.ticker.strip().upper()
+        passages = query_filings(ticker, body.question, top_k=5)
+        if not passages:
+            return {"answer": "未找到相关内容，请先上传该公司的财报 PDF。"}
+
+        context = "\n\n---\n\n".join(passages)
+        response = await _rag_client.messages.create(
+            model="claude-sonnet-4-6",
+            max_tokens=3000,
+            system=(
+                "你是财报分析专家。根据以下财报原文片段回答用户问题，"
+                "引用具体数据，不允许无依据的推断。如原文未提及，请明确说明。"
+            ),
+            messages=[{
+                "role": "user",
+                "content": f"【财报原文片段】\n{context}\n\n【问题】\n{body.question}",
+            }],
+        )
+        return {"answer": response.content[0].text}
     except Exception as e:
         return {"error": str(e)}

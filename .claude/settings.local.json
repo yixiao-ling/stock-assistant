@@ -18,7 +18,16 @@
       "Bash(uvicorn api:app --port 8001)",
       "Bash(curl -s http://localhost:8001/openapi.json)",
       "Bash(python3 -c \"import sys,json; d=json.load\\(sys.stdin\\); [print\\(f' {m.upper\\(\\)} {p}'\\) for p,v in d['paths'].items\\(\\) for m in v]\" kill %1)",
-      "Bash(pip list *)"
+      "Bash(pip list *)",
+      "Bash(railway status *)",
+      "Bash(railway domain *)",
+      "Bash(railway whoami *)",
+      "Bash(railway login *)",
+      "Bash(railway variables *)",
+      "Bash(gh auth *)",
+      "Bash(grep -E \"\\\\.pub$|id_\")",
+      "Read(//Users/irisling/.ssh/**)",
+      "Bash(git add *)"
     ]
   }
 }

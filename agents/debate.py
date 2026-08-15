@@ -11,8 +11,9 @@ from pathlib import Path
 sys.path.insert(0, str(Path(__file__).parent.parent))
 from models.schemas import DebateResult
 
-_MODEL = "claude-opus-4-5"
-_MAX_TOKENS = 600
+_MODEL = "claude-sonnet-4-6"
+_MAX_TOKENS = 2000
+_JUDGE_MAX_TOKENS = 4000
 
 _client = anthropic.AsyncAnthropic(api_key=os.getenv("ANTHROPIC_API_KEY"))
 
@@ -63,10 +64,10 @@ def _build_context(ticker: str, fundamental: str, sentiment: str, technical: str
     )
 
 
-async def _call(system: str, user: str) -> str:
+async def _call(system: str, user: str, max_tokens: int = _MAX_TOKENS) -> str:
     response = await _client.messages.create(
         model=_MODEL,
-        max_tokens=_MAX_TOKENS,
+        max_tokens=max_tokens,
         system=system,
         messages=[{"role": "user", "content": user}],
     )
@@ -113,7 +114,7 @@ async def run_debate(
         f"=== 空头反驳 ===\n{bear_rebuttal}\n\n"
         "请综合以上辩论内容，给出裁决。"
     )
-    verdict = await _call(JUDGE_SYSTEM, judge_prompt)
+    verdict = await _call(JUDGE_SYSTEM, judge_prompt, max_tokens=_JUDGE_MAX_TOKENS)
 
     return DebateResult(
         ticker=ticker,
