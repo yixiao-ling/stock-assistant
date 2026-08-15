@@ -124,6 +124,11 @@ header{height:48px;background:#010409;border-bottom:1px solid var(--border);disp
 .step-dot.done{background:var(--green);animation:none}
 .step.done-step{color:var(--text)}
 
+/* ── Deep research ── */
+.deep-options{display:flex;gap:16px;flex-wrap:wrap;margin:10px 0 18px;font-size:12px;color:var(--muted)}
+.deep-chk{display:flex;align-items:center;gap:6px;cursor:pointer}
+.deep-chk input{accent-color:var(--blue)}
+
 /* ── Advisor ── */
 .risk-grid{display:grid;grid-template-columns:repeat(3,1fr);gap:14px;margin-bottom:20px}
 .risk-card{background:var(--card);border:1px solid var(--border);border-radius:8px;padding:16px;text-align:center}
@@ -224,6 +229,8 @@ hr{border:none;border-top:1px solid var(--border);margin:20px 0}
       <button class="tab-btn" onclick="switchTab('rag')">财报解读</button>
       <button class="tab-btn" onclick="switchTab('debate')">多空辩论</button>
       <button class="tab-btn" onclick="switchTab('advisor')">持仓顾问</button>
+      <button class="tab-btn" onclick="switchTab('deep')">深度研究</button>
+      <button class="tab-btn" onclick="switchTab('review')">决策复盘</button>
     </div>
 
     <div class="tab-content">
@@ -318,6 +325,43 @@ hr{border:none;border-top:1px solid var(--border);margin:20px 0}
         </div>
       </div>
 
+      <!-- ── Tab 5: 深度研究 ── -->
+      <div class="tab-panel" id="panel-deep">
+        <div class="search-row">
+          <input class="input ticker-input" id="deep-ticker" placeholder="Ticker" maxlength="10"
+            oninput="onTickerInput(this.value,'deep-badge')">
+          <button class="btn btn-primary" id="deep-btn" onclick="startDeepAnalysis()">开始深度研究</button>
+          <div id="deep-badge"></div>
+        </div>
+        <div class="deep-options">
+          <label class="deep-chk"><input type="checkbox" id="deep-an-market" checked> 行情</label>
+          <label class="deep-chk"><input type="checkbox" id="deep-an-social" checked> 情绪</label>
+          <label class="deep-chk"><input type="checkbox" id="deep-an-news" checked> 新闻</label>
+          <label class="deep-chk"><input type="checkbox" id="deep-an-fundamentals" checked> 基本面</label>
+          <label class="deep-chk"><input type="checkbox" id="deep-with-portfolio" checked> 结合持仓</label>
+        </div>
+        <div id="deep-content">
+          <div class="empty">
+            <div class="empty-icon">🧠</div>
+            <div class="empty-text">TradingAgents 12-agent 深度研究：单次约 $1-1.7，耗时 4-8 分钟</div>
+          </div>
+        </div>
+      </div>
+
+      <!-- ── Tab 6: 决策复盘 ── -->
+      <div class="tab-panel" id="panel-review">
+        <div class="search-row">
+          <button class="btn btn-primary" id="review-refresh-btn" onclick="refreshReview()">刷新收益</button>
+        </div>
+        <div id="review-stats"></div>
+        <div id="review-content">
+          <div class="empty">
+            <div class="empty-icon">📊</div>
+            <div class="empty-text">尚无决策记录，先跑一次深度研究</div>
+          </div>
+        </div>
+      </div>
+
     </div><!-- /tab-content -->
   </main>
 </div>
@@ -333,6 +377,7 @@ let cache = {};       // { TICKER: { fundamental, sentiment, technical, synthesi
 window.addEventListener('DOMContentLoaded', () => {
   checkApi();
   loadPortfolio();
+  tryReattachDeepJob();
 });
 
 async function checkApi() {
@@ -456,11 +501,12 @@ function renderSectorChart(data) {
 // ── Tab switching ──────────────────────────────────────────────────────────
 function switchTab(name) {
   document.querySelectorAll('.tab-btn').forEach((b,i) => {
-    const names = ['analyze','rag','debate','advisor'];
+    const names = ['analyze','rag','debate','advisor','deep','review'];
     b.classList.toggle('active', names[i] === name);
   });
   document.querySelectorAll('.tab-panel').forEach(p => p.classList.remove('active'));
   document.getElementById('panel-'+name).classList.add('active');
+  if (name === 'review') loadReview();
 }
 
 // ── Portfolio badge helper ────────────────────────────────────────────────
@@ -562,6 +608,7 @@ function renderAnalysis(ticker, data) {
     ${expandable('基本面详细分析', fundamental)}
     ${expandable('情绪与新闻分析', sentiment)}
     ${expandable('技术面详细分析', technical)}
+    ${data.snapshot ? expandable('原始行情快照（确定性计算，非 AI 生成）', '```\n' + data.snapshot + '\n```') : ''}
   `;
 }
 
@@ -821,6 +868,278 @@ function extractTechSignal(text) {
 }
 
 function delay(ms) { return new Promise(r => setTimeout(r, ms)); }
+
+// ── Tab 5: Deep Research (TA bridge, job-id + SSE) ───────────────────────────
+const DEEP_STAGE_ORDER = [
+  ['market_report', '行情与技术面'],
+  ['sentiment_report', '社交情绪'],
+  ['news_report', '新闻与宏观'],
+  ['fundamentals_report', '基本面'],
+  ['investment_debate_state.bull_history', '多头研究员'],
+  ['investment_debate_state.bear_history', '空头研究员'],
+  ['investment_debate_state.judge_decision', '研究主管定调'],
+  ['trader_investment_plan', '交易员方案'],
+  ['risk_debate_state.aggressive_history', '激进风控'],
+  ['risk_debate_state.conservative_history', '保守风控'],
+  ['risk_debate_state.neutral_history', '中性风控'],
+  ['final_trade_decision', '投资经理终裁'],
+];
+
+let deepES = null;
+
+function getDeepToken() {
+  let t = localStorage.getItem('sa_deep_token');
+  if (!t) {
+    t = prompt('深度研究口令（部署时生成，见服务器 .env 的 SA_DEEP_TOKEN）：');
+    if (t) localStorage.setItem('sa_deep_token', t);
+  }
+  return t;
+}
+
+async function startDeepAnalysis() {
+  const ticker = document.getElementById('deep-ticker').value.trim().toUpperCase();
+  if (!ticker) return;
+  const token = getDeepToken();
+  if (!token) return;
+
+  const analysts = ['market', 'social', 'news', 'fundamentals'].filter(
+    a => document.getElementById('deep-an-' + a).checked);
+  const withPortfolio = document.getElementById('deep-with-portfolio').checked;
+
+  setBtn('deep-btn', true, '启动中...');
+  showDeepProgress();
+
+  try {
+    const r = await fetch(`${API}/deep/${ticker}`, {
+      method: 'POST',
+      headers: { 'Content-Type': 'application/json', 'X-SA-Token': token },
+      body: JSON.stringify({ with_portfolio: withPortfolio, analysts }),
+    });
+    if (r.status === 403) { localStorage.removeItem('sa_deep_token'); throw new Error('口令错误，请重试'); }
+    if (r.status === 409) { const d = await r.json(); throw new Error(d.error || '已有深度分析在运行中'); }
+    const data = await r.json();
+    if (data.error) throw new Error(data.error);
+
+    localStorage.setItem('sa_deep_job', JSON.stringify({ job_id: data.job_id, ticker }));
+    attachDeepStream(data.job_id, token);
+  } catch (e) {
+    document.getElementById('deep-content').innerHTML = errBox(e.message);
+    setBtn('deep-btn', false, '开始深度研究');
+  }
+}
+
+function showDeepProgress() {
+  document.getElementById('deep-content').innerHTML = `
+    <div class="progress-wrap" id="deep-steps">
+      ${DEEP_STAGE_ORDER.map(([key, label], i) => `
+      <div class="step" id="deep-step-${i}">
+        <div class="step-dot" id="deep-dot-${i}"></div>
+        <span>${label}</span>
+      </div>`).join('')}
+    </div>
+    <div id="deep-sections"></div>
+    <div id="deep-final"></div>`;
+}
+
+function deepStageIndex(key) {
+  return DEEP_STAGE_ORDER.findIndex(([k]) => k === key);
+}
+
+function attachDeepStream(jobId, token) {
+  if (deepES) deepES.close();
+  if (!document.getElementById('deep-steps')) showDeepProgress();
+  deepES = new EventSource(`${API}/deep/stream/${jobId}?token=${encodeURIComponent(token)}&from_seq=0`);
+
+  deepES.addEventListener('stage', (ev) => {
+    const d = JSON.parse(ev.data);
+    const i = deepStageIndex(d.key);
+    if (i < 0) return;
+    const dot = document.getElementById(`deep-dot-${i}`);
+    const step = document.getElementById(`deep-step-${i}`);
+    if (dot) { dot.className = 'step-dot done'; step.classList.add('done-step'); }
+  });
+
+  deepES.addEventListener('tool', (ev) => {
+    const d = JSON.parse(ev.data);
+    const box = document.getElementById('deep-sections');
+    if (box) box.insertAdjacentHTML('beforeend',
+      `<div style="font-size:11px;color:var(--muted);padding:2px 0">→ 调用工具 ${esc(d.tool || '')}</div>`);
+  });
+
+  deepES.addEventListener('section', (ev) => {
+    const d = JSON.parse(ev.data);
+    renderDeepSection(d.key, d.text);
+  });
+
+  deepES.addEventListener('done', () => {
+    deepES.close();
+    localStorage.removeItem('sa_deep_job');
+    fetchDeepResult(jobId, token);
+    setBtn('deep-btn', false, '开始深度研究');
+  });
+
+  deepES.addEventListener('error', (ev) => {
+    deepES.close();
+    localStorage.removeItem('sa_deep_job');
+    let msg = '深度研究出错';
+    try { msg = JSON.parse(ev.data).message || msg; } catch (e) {}
+    const box = document.getElementById('deep-final');
+    if (box) box.innerHTML = errBox(msg);
+    setBtn('deep-btn', false, '开始深度研究');
+  });
+}
+
+function renderDeepSection(key, text) {
+  const label = (DEEP_STAGE_ORDER.find(([k]) => k === key) || [null, key])[1];
+  const box = document.getElementById('deep-sections');
+  if (!box) return;
+  const id = 'deepsec-' + key.replace(/[^a-zA-Z0-9]/g, '_');
+  if (!document.getElementById(id)) {
+    box.insertAdjacentHTML('beforeend', `
+      <div class="expd">
+        <div class="expd-hd" onclick="toggleExpand('${id}')">
+          <span class="expd-title">${label}</span>
+          <span class="expd-arrow" id="arr-${id}">▼</span>
+        </div>
+        <div class="expd-body" id="${id}" style="padding:0 16px 16px"></div>
+      </div>`);
+  }
+  document.getElementById(id).innerHTML = md(text);
+}
+
+async function fetchDeepResult(jobId, token) {
+  try {
+    const r = await fetch(`${API}/deep/result/${jobId}`, { headers: { 'X-SA-Token': token } });
+    const data = await r.json();
+    if (data.error) { document.getElementById('deep-final').innerHTML = errBox(data.error); return; }
+    renderDeepFinal(data);
+  } catch (e) {
+    document.getElementById('deep-final').innerHTML = errBox(e.message);
+  }
+}
+
+function ratingColor(r) {
+  return { Buy: 'g', Overweight: 'g', Hold: 'b', Underweight: 'r', Sell: 'r' }[r] || 'b';
+}
+
+function renderDeepFinal(data) {
+  const stats = data.stats || {};
+  const box = document.getElementById('deep-final');
+  if (!box) return;
+  box.innerHTML = `
+    <div class="synthesis" style="margin-top:16px">
+      <div class="synthesis-lbl">投资经理终裁 · <span class="${ratingColor(data.rating)}">${data.rating}</span></div>
+      ${md(data.final_decision)}
+      <div style="margin-top:12px;font-size:11px;color:var(--muted)">
+        ${stats.llm_calls || 0} 次 LLM 调用 · ${stats.tool_calls || 0} 次工具调用 ·
+        ${((stats.tokens_in || 0) + (stats.tokens_out || 0)).toLocaleString()} tokens ·
+        实际花费 $${(stats.usd_est || 0).toFixed(2)} · 耗时 ${Math.round(stats.elapsed_s || 0)}s
+      </div>
+      ${(data.warnings || []).length ? `<div class="err-box" style="margin-top:10px">⚠ ${esc(data.warnings.join('；'))}</div>` : ''}
+    </div>`;
+}
+
+async function tryReattachDeepJob() {
+  const raw = localStorage.getItem('sa_deep_job');
+  const token = localStorage.getItem('sa_deep_token');
+  if (!raw || !token) return;
+  let job;
+  try { job = JSON.parse(raw); } catch (e) { localStorage.removeItem('sa_deep_job'); return; }
+  try {
+    const r = await fetch(`${API}/deep/result/${job.job_id}`, { headers: { 'X-SA-Token': token } });
+    const data = await r.json();
+    if (data.error || !data.state) { localStorage.removeItem('sa_deep_job'); return; }
+    if (data.state === 'running' || data.state === 'queued') {
+      document.getElementById('deep-ticker').value = job.ticker;
+      showDeepProgress();
+      setBtn('deep-btn', true, '运行中...');
+      attachDeepStream(job.job_id, token);
+    } else {
+      localStorage.removeItem('sa_deep_job');
+    }
+  } catch (e) { /* server unreachable — leave the stored job for next load */ }
+}
+
+// ── Tab 6: Decision Review ────────────────────────────────────────────────
+async function loadReview() {
+  try {
+    const r = await fetch(`${API}/review`);
+    const data = await r.json();
+    if (data.error) throw new Error(data.error);
+    renderReviewStats(data.summary);
+    renderReviewTable(data.entries);
+  } catch (e) {
+    document.getElementById('review-content').innerHTML = errBox(e.message);
+  }
+}
+
+function pctStr(p) {
+  return p == null ? '—' : (p >= 0 ? '+' : '') + (p * 100).toFixed(1) + '%';
+}
+
+function renderReviewStats(s) {
+  const box = document.getElementById('review-stats');
+  if (!box) return;
+  if (!s || s.n_total === 0) { box.innerHTML = ''; return; }
+  const winPct = s.win_rate == null ? '—' : (s.win_rate * 100).toFixed(0) + '%';
+  box.innerHTML = `
+    <div class="risk-grid" style="grid-template-columns:repeat(4,1fr);margin-bottom:20px">
+      <div class="risk-card"><div class="risk-lbl">总决策数</div><div class="risk-val b">${s.n_total}</div></div>
+      <div class="risk-card"><div class="risk-lbl">已验证</div><div class="risk-val b">${s.n_resolved}</div></div>
+      <div class="risk-card"><div class="risk-lbl">胜率</div><div class="risk-val ${(s.win_rate||0)>=0.5?'g':'r'}">${winPct}</div></div>
+      <div class="risk-card"><div class="risk-lbl">平均 Alpha</div><div class="risk-val ${(s.avg_alpha||0)>=0?'g':'r'}">${pctStr(s.avg_alpha)}</div></div>
+    </div>`;
+}
+
+function renderReviewTable(entries) {
+  const box = document.getElementById('review-content');
+  if (!box) return;
+  if (!entries || entries.length === 0) {
+    box.innerHTML = `<div class="empty"><div class="empty-icon">📊</div><div class="empty-text">尚无决策记录，先跑一次深度研究</div></div>`;
+    return;
+  }
+  box.innerHTML = entries.map((e, i) => {
+    const id = 'rev-' + i;
+    const alphaColor = e.alpha_pct == null ? '' : (e.alpha_pct >= 0 ? 'g' : 'r');
+    const meta = e.pending
+      ? '待验证 · 还需等待交易日结算'
+      : `收益 ${pctStr(e.raw_pct)} · Alpha <span class="${alphaColor}">${pctStr(e.alpha_pct)}</span> · 持有 ${e.holding || '?'}`;
+    return `
+    <div class="expd">
+      <div class="expd-hd" onclick="toggleExpand('${id}')">
+        <span class="expd-title">${esc(e.date)} · ${esc(e.ticker)} · <span class="${ratingColor(e.rating)}">${esc(e.rating)}</span></span>
+        <span style="font-size:11px;color:var(--muted);margin-right:10px">${meta}</span>
+        <span class="expd-arrow" id="arr-${id}">▼</span>
+      </div>
+      <div class="expd-body" id="${id}" style="padding:0 16px 16px">
+        <div class="chat-label">决策</div>
+        ${md(e.decision)}
+        ${e.reflection ? `<div class="chat-label" style="margin-top:14px">AI 复盘</div>${md(e.reflection)}` : ''}
+      </div>
+    </div>`;
+  }).join('');
+}
+
+async function refreshReview() {
+  const token = getDeepToken();
+  if (!token) return;
+  setBtn('review-refresh-btn', true, '结算中...');
+  try {
+    const r = await fetch(`${API}/review/resolve`, {
+      method: 'POST',
+      headers: { 'Content-Type': 'application/json', 'X-SA-Token': token },
+      body: JSON.stringify({}),
+    });
+    if (r.status === 403) { localStorage.removeItem('sa_deep_token'); throw new Error('口令错误，请重试'); }
+    const data = await r.json();
+    if (data.error) throw new Error(data.error);
+    await loadReview();
+  } catch (e) {
+    alert('刷新失败：' + e.message);
+  } finally {
+    setBtn('review-refresh-btn', false, '刷新收益');
+  }
+}
 </script>
 </body>
 </html>

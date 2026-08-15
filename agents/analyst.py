@@ -53,20 +53,29 @@ async def sentiment_agent(ticker: str, news_list: list, extra_context: str = "")
     return response.content[0].text
 
 
-async def technical_agent(ticker: str, stock_data: dict, extra_context: str = "") -> str:
+async def technical_agent(ticker: str, stock_data: dict, extra_context: str = "", snapshot: str = "") -> str:
     system = (
-        "你是技术面分析师。用自然语言解读 RSI 和 MACD 信号，"
-        "不堆砌数字，说清楚信号含义和潜在走势方向。"
+        "你是技术面分析师。下面提供的行情快照由程序确定性计算得出，是唯一可信数值来源。"
+        "只允许引用快照中出现的具体数字，禁止推断或编造任何未列出的指标值。"
+        "用自然语言解读 RSI、MACD、布林带等信号，不堆砌数字，说清楚信号含义和潜在走势方向。"
     )
-    price = stock_data.get("current_price")
-    high = stock_data.get("week_52_high")
-    low = stock_data.get("week_52_low")
-    user = (
-        f"请对 {ticker} 做技术面分析。"
-        f"当前价：{price}，52周高：{high}，52周低：{low}。"
-        f"请推断当前 RSI 所处区间及 MACD 信号含义，给出短期走势判断。"
-        + (f"\n\n补充背景：{extra_context}" if extra_context else "")
-    )
+    if snapshot and not snapshot.startswith("NO_MARKET_DATA"):
+        user = (
+            f"请对 {ticker} 做技术面分析，以下为确定性计算的真实行情快照：\n\n{snapshot}\n\n"
+            f"请解读 RSI、MACD、布林带信号含义，给出短期走势判断。只允许引用快照中出现的数字。"
+            + (f"\n\n补充背景：{extra_context}" if extra_context else "")
+        )
+    else:
+        price = stock_data.get("current_price")
+        high = stock_data.get("week_52_high")
+        low = stock_data.get("week_52_low")
+        reason = snapshot or "未获取到行情快照"
+        user = (
+            f"请对 {ticker} 做技术面分析。当前无法获取详细行情快照（{reason}），"
+            f"仅有基础信息：当前价 {price}，52周高 {high}，52周低 {low}。"
+            f"请基于这些有限信息给出保守判断，明确说明数据不足，不要编造具体的 RSI/MACD 数值。"
+            + (f"\n\n补充背景：{extra_context}" if extra_context else "")
+        )
     response = await _client.messages.create(
         model=_MODEL,
         max_tokens=_MAX_TOKENS,
@@ -99,15 +108,17 @@ async def _synthesis_agent(ticker: str, fundamental: str, sentiment: str, techni
 
 async def run_full_analysis(ticker: str, extra_context: str = "") -> dict:
     from data.stock_data import get_news, get_stock_data
+    from integrations.ta_snapshot import aget_technical_snapshot
 
     stock_data = get_stock_data(ticker)
     news_list = get_news(ticker)
 
-    fundamental, sentiment, technical = await asyncio.gather(
+    snapshot, fundamental, sentiment = await asyncio.gather(
+        aget_technical_snapshot(ticker),
         fundamental_agent(ticker, stock_data, extra_context),
         sentiment_agent(ticker, news_list, extra_context),
-        technical_agent(ticker, stock_data, extra_context),
     )
+    technical = await technical_agent(ticker, stock_data, extra_context, snapshot=snapshot)
 
     synthesis = await _synthesis_agent(ticker, fundamental, sentiment, technical)
 
@@ -116,4 +127,5 @@ async def run_full_analysis(ticker: str, extra_context: str = "") -> dict:
         "sentiment": sentiment,
         "technical": technical,
         "synthesis": synthesis,
+        "snapshot": snapshot,
     }

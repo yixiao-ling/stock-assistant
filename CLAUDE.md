@@ -7,7 +7,7 @@ This file provides guidance to Claude Code (claude.ai/code) when working with co
 核心功能：个股分析、财报RAG解读、多空辩论、持仓顾问。
 
 ## 技术栈
-- LLM：Claude API（claude-opus-4-5），`anthropic.AsyncAnthropic`
+- LLM：Claude API（claude-sonnet-4-6），`anthropic.AsyncAnthropic`
 - 数据：yfinance + NewsAPI
 - 向量库：ChromaDB（本地，./chroma_db）
 - 持仓数据：Mock（data/portfolio/mock_data.json）
@@ -46,7 +46,7 @@ FastAPI 暴露四个端点，同时 serve `index.html`：
 1. `fundamental_agent` — 基本面，yfinance info
 2. `sentiment_agent` — 新闻情绪，NewsAPI
 3. `technical_agent` — 技术面，仅用价格/52周高低推断 RSI/MACD
-4. `_synthesis_agent` — 整合三份报告，`max_tokens=2000`
+4. `_synthesis_agent` — 整合三份报告，`max_tokens=4000`
 
 所有 Agent 接受可选 `extra_context: str`，用于注入持仓背景信息。
 

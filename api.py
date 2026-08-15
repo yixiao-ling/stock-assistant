@@ -1,14 +1,19 @@
+import asyncio
+import json
 import os
 import tempfile
 from dataclasses import asdict
 from pathlib import Path
+from typing import List, Optional
 
 import anthropic
 from dotenv import load_dotenv
-from fastapi import FastAPI, File, Form, UploadFile
+from fastapi import Depends, FastAPI, File, Form, Request, UploadFile
 from fastapi.middleware.cors import CORSMiddleware
-from fastapi.responses import FileResponse
+from fastapi.responses import FileResponse, JSONResponse, StreamingResponse
 from pydantic import BaseModel
+
+from integrations.auth import require_deep_token
 
 from agents.analyst import run_full_analysis
 from agents.debate import run_debate
@@ -194,5 +199,173 @@ async def rag_query(body: RagQueryRequest):
             }],
         )
         return {"answer": response.content[0].text}
+    except Exception as e:
+        return {"error": str(e)}
+
+
+# ── /deep/{ticker} · /deep/stream/{job_id} · /deep/result/{job_id} · /deep/jobs ─
+# Deep research: TA's full 12-agent LangGraph pipeline. ~$1-1.7/run, 4-8 min,
+# so job-id + SSE rather than a blocking request (nginx proxy_read_timeout is
+# 300s and this box is single-worker). Gated behind SA_DEEP_TOKEN and capped
+# at one run at a time — see integrations/jobs.py::try_start.
+
+class DeepStartRequest(BaseModel):
+    trade_date: Optional[str] = None
+    with_portfolio: bool = True
+    analysts: List[str] = ["market", "social", "news", "fundamentals"]
+
+
+@app.post("/deep/{ticker}")
+async def deep_start(ticker: str, body: DeepStartRequest, _auth=Depends(require_deep_token)):
+    from integrations import jobs
+    from integrations.ta_bridge import DeepRunRequest, run_deep_analysis_sync
+    from integrations.ta_runtime import submit
+
+    ticker = ticker.strip().upper()
+    job = jobs.create(ticker)
+    if not jobs.try_start(job.id):
+        return JSONResponse(status_code=409, content={"error": "已有深度分析在运行中，请稍后再试"})
+
+    loop = asyncio.get_running_loop()
+
+    def emit(event: dict) -> None:
+        loop.call_soon_threadsafe(jobs.append, job, event)
+
+    portfolio_context = ""
+    if body.with_portfolio:
+        try:
+            from integrations.portfolio_context import get_portfolio_context
+
+            portfolio_context = await get_portfolio_context(ticker)
+        except Exception:
+            portfolio_context = ""
+
+    def run() -> None:
+        job.state = "running"
+        try:
+            req = DeepRunRequest(
+                ticker=ticker,
+                trade_date=body.trade_date,
+                portfolio_context=portfolio_context,
+                selected_analysts=tuple(body.analysts),
+            )
+            result = run_deep_analysis_sync(req, emit=emit)
+            job.result = result
+            job.state = "done"
+            emit({"type": "done", "result_url": f"/deep/result/{job.id}"})
+        except Exception as e:
+            job.error = str(e)
+            job.state = "error"
+            emit({"type": "error", "message": str(e)})
+        finally:
+            jobs.finish(job.id)
+
+    submit(run)
+    return {"job_id": job.id}
+
+
+@app.get("/deep/stream/{job_id}")
+async def deep_stream(job_id: str, request: Request, from_seq: int = 0, _auth=Depends(require_deep_token)):
+    from integrations import jobs
+
+    job = jobs.get(job_id)
+    if not job:
+        return JSONResponse(status_code=404, content={"error": "job not found"})
+
+    # Native EventSource auto-reconnects with a Last-Event-ID header rather
+    # than letting JS rewrite the URL's from_seq query param — honor it so a
+    # dropped connection resumes instead of replaying the whole backlog.
+    last_event_id = request.headers.get("last-event-id")
+    start_seq = int(last_event_id) + 1 if last_event_id is not None else from_seq
+
+    async def gen():
+        q = jobs.subscribe(job)
+        try:
+            backlog = [e for e in job.events if e["seq"] >= start_seq]
+            last_seq_sent = start_seq - 1
+            for e in backlog:
+                last_seq_sent = e["seq"]
+                yield f"event: {e['type']}\nid: {e['seq']}\ndata: {json.dumps(e, ensure_ascii=False)}\n\n"
+            if backlog and backlog[-1]["type"] in ("done", "error"):
+                return
+            while True:
+                if await request.is_disconnected():
+                    break
+                try:
+                    e = await asyncio.wait_for(q.get(), timeout=15)
+                except asyncio.TimeoutError:
+                    yield ": ping\n\n"
+                    continue
+                if e["seq"] <= last_seq_sent:
+                    continue
+                last_seq_sent = e["seq"]
+                yield f"event: {e['type']}\nid: {e['seq']}\ndata: {json.dumps(e, ensure_ascii=False)}\n\n"
+                if e["type"] in ("done", "error"):
+                    break
+        finally:
+            jobs.unsubscribe(job, q)
+
+    return StreamingResponse(
+        gen(),
+        media_type="text/event-stream",
+        headers={"X-Accel-Buffering": "no", "Cache-Control": "no-cache"},
+    )
+
+
+@app.get("/deep/result/{job_id}")
+async def deep_result(job_id: str, _auth=Depends(require_deep_token)):
+    from integrations import jobs
+
+    job = jobs.get(job_id)
+    if not job:
+        return JSONResponse(status_code=404, content={"error": "job not found"})
+    if job.state == "done":
+        return job.result
+    if job.state == "error":
+        return {"error": job.error}
+    return {"state": job.state, "seq": job.next_seq}
+
+
+@app.get("/deep/jobs")
+async def deep_jobs(_auth=Depends(require_deep_token)):
+    from integrations import jobs
+
+    return [
+        {"job_id": j.id, "ticker": j.ticker, "state": j.state, "created_at": j.created_at}
+        for j in jobs.list_recent(20)
+    ]
+
+
+# ── /review · /review/resolve ────────────────────────────────────────────────
+# Decision review: reads TA's outcome-graded memory log (every deep-run
+# decision, realized return + alpha vs benchmark once resolved, and the
+# model's own reflection on what it got right or wrong).
+
+@app.get("/review")
+async def review(ticker: str = "", limit: int = 50):
+    try:
+        from integrations.ta_memory import list_entries, summary
+
+        return {
+            "summary": summary(),
+            "entries": list_entries(ticker=ticker or None, limit=limit),
+        }
+    except Exception as e:
+        return {"error": str(e)}
+
+
+class ReviewResolveRequest(BaseModel):
+    ticker: Optional[str] = None
+
+
+@app.post("/review/resolve")
+async def review_resolve(body: ReviewResolveRequest, _auth=Depends(require_deep_token)):
+    try:
+        from integrations.ta_memory import resolve_pending_sync
+        from integrations.ta_runtime import submit
+
+        future = submit(resolve_pending_sync, body.ticker)
+        result = await asyncio.wrap_future(future)
+        return result
     except Exception as e:
         return {"error": str(e)}

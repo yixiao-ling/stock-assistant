@@ -6,10 +6,16 @@ After=network.target
 Type=simple
 User=root
 WorkingDirectory=/opt/stock-assistant
+Environment=TA_HOME=/opt/stock-assistant/var/tradingagents
 EnvironmentFile=/opt/stock-assistant/.env
 ExecStart=/opt/stock-assistant/venv/bin/uvicorn api:app --host 127.0.0.1 --port 8000
 Restart=on-failure
 RestartSec=5
+# A deep run's peak footprint (LangGraph state + pandas frames + ChromaDB/
+# MiniLM once warmed) is estimated at ~1.5-2.2GB on top of ~250MB steady
+# state — on a 4GB box this leaves real but not unlimited headroom. Fail one
+# request loudly instead of letting the OOM killer take nginx down with it.
+MemoryMax=3G
 
 [Install]
 WantedBy=multi-user.target
