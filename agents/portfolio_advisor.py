@@ -2,7 +2,7 @@ import os
 import sys
 from pathlib import Path
 
-import anthropic
+import openai
 from dotenv import load_dotenv
 
 load_dotenv()
@@ -11,10 +11,10 @@ sys.path.insert(0, str(Path(__file__).parent.parent))
 from data.stock_data import get_news, get_stock_data
 from models.schemas import InvestorProfile
 
-_MODEL = "claude-sonnet-4-6"
+_MODEL = "deepseek-v4-flash"
 _MAX_TOKENS = 2000
 
-_client = anthropic.AsyncAnthropic(api_key=os.getenv("ANTHROPIC_API_KEY"))
+_client = openai.AsyncOpenAI(api_key=os.getenv("DEEPSEEK_API_KEY"), base_url="https://api.deepseek.com")
 
 PORTFOLIO_ADVISOR_SYSTEM = (
     "你是这位投资者的私人 AI 顾问，你是唯一知道他完整持仓的 AI。\n"
@@ -89,13 +89,13 @@ async def portfolio_advisor_agent(
         f"{scenario_text}"
     )
 
-    response = await _client.messages.create(
+    response = await _client.chat.completions.create(
         model=_MODEL,
         max_tokens=3000,
-        system=PORTFOLIO_ADVISOR_SYSTEM,
-        messages=[{"role": "user", "content": user}],
+        extra_body={"thinking": {"type": "disabled"}},
+        messages=[{"role": "system", "content": PORTFOLIO_ADVISOR_SYSTEM}, {"role": "user", "content": user}],
     )
-    return response.content[0].text
+    return response.choices[0].message.content
 
 
 async def analyze_ticker_with_portfolio_context(
@@ -155,10 +155,10 @@ async def analyze_ticker_with_portfolio_context(
         f"{task_instruction}"
     )
 
-    response = await _client.messages.create(
+    response = await _client.chat.completions.create(
         model=_MODEL,
         max_tokens=_MAX_TOKENS,
-        system=system,
-        messages=[{"role": "user", "content": user}],
+        extra_body={"thinking": {"type": "disabled"}},
+        messages=[{"role": "system", "content": system}, {"role": "user", "content": user}],
     )
-    return response.content[0].text
+    return response.choices[0].message.content

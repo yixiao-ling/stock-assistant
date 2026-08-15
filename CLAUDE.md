@@ -7,7 +7,7 @@ This file provides guidance to Claude Code (claude.ai/code) when working with co
 核心功能：个股分析、财报RAG解读、多空辩论、持仓顾问。
 
 ## 技术栈
-- LLM：Claude API（claude-sonnet-4-6），`anthropic.AsyncAnthropic`
+- LLM：DeepSeek API（deepseek-chat，快速分析路径 / deepseek-reasoner，TradingAgents 深度研究路径），通过 `openai.AsyncOpenAI`（`base_url="https://api.deepseek.com"`，OpenAI 兼容接口）调用
 - 数据：yfinance + NewsAPI
 - 向量库：ChromaDB（本地，./chroma_db）
 - 持仓数据：Mock（data/portfolio/mock_data.json）
@@ -22,7 +22,7 @@ pip install -r requirements.txt
 uvicorn api:app --reload
 ```
 
-环境变量（`.env`）：`ANTHROPIC_API_KEY`、`NEWS_API_KEY`
+环境变量（`.env`）：`DEEPSEEK_API_KEY`、`NEWS_API_KEY`、`SA_DEEP_TOKEN`（深度研究接口口令）
 
 ## 验证命令
 
@@ -81,7 +81,7 @@ FastAPI 暴露四个端点，同时 serve `index.html`：
 - Never 修改 `agents/` 和 `data/` 下的任何文件，除非明确说"修改XX文件"
 - Never 使用 moomoo API
 - Never 一次修改超过一个模块，除非明确要求
-- Never 把 Claude API 调用的 `max_tokens` 设低于：
+- Never 把 LLM API 调用的 `max_tokens` 设低于：
   - 单项 Agent（基本面/情绪/技术面）：800
   - 整合报告/辩论裁判/持仓顾问：3000
 

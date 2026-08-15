@@ -5,8 +5,8 @@ from fastapi import Header, HTTPException, Query
 
 
 def require_deep_token(x_sa_token: Optional[str] = Header(None), token: Optional[str] = Query(None)) -> None:
-    """Gates /deep/* and /review/resolve. A deep run costs ~$1/click and the
-    API has allow_origins=["*"] on a public IP — this is a shared-secret
+    """Gates /deep/* and /review/resolve. A deep run takes several minutes and
+    the API has allow_origins=["*"] on a public IP — this is a shared-secret
     speed bump against opportunistic/bot hits, not a defense against a
     determined attacker (the token, once known to the browser, is visible in
     devtools like any client-side value). Fails closed if unconfigured

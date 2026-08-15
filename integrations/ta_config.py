@@ -10,10 +10,11 @@ def build_ta_config(output_language: str = "简体中文") -> dict:
     from tradingagents.default_config import DEFAULT_CONFIG
 
     config = DEFAULT_CONFIG.copy()
-    config["llm_provider"] = "anthropic"
-    config["deep_think_llm"] = "claude-sonnet-4-6"
-    config["quick_think_llm"] = "claude-sonnet-4-6"
-    config["anthropic_effort"] = None
+    config["llm_provider"] = "deepseek"
+    # deepseek-chat/deepseek-reasoner are deprecated aliases (retired 2026-07-24)
+    # of deepseek-v4-flash's non-thinking/thinking modes — use the explicit names.
+    config["deep_think_llm"] = "deepseek-v4-pro"  # Research Manager + Portfolio Manager
+    config["quick_think_llm"] = "deepseek-v4-flash"
     config["output_language"] = output_language
     config["checkpoint_enabled"] = False
     config["max_debate_rounds"] = 1

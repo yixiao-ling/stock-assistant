@@ -54,7 +54,7 @@ vi .env
 ```
 
 需要填：
-- `ANTHROPIC_API_KEY`、`NEWS_API_KEY`（原有的）
+- `DEEPSEEK_API_KEY`、`NEWS_API_KEY`（原有的）
 - `SA_DEEP_TOKEN`——深度研究接口的访问口令，本地生成一个复制过去：
   ```bash
   python3 -c "import secrets; print(secrets.token_urlsafe(24))"
@@ -163,4 +163,4 @@ curl -s -o /dev/null -w "%{http_code}\n" http://127.0.0.1:8000/portfolio
   # crontab -e
   0 3 * * 0 find /opt/stock-assistant/var/tradingagents/cache -name '*.csv' -mtime +7 -delete
   ```
-- 2核4G 对这个项目基础功能（分析/辩论/持仓/RAG）够用；深度研究单次耗时 4-8 分钟、成本约 $1-1.7，接口已加 `SA_DEEP_TOKEN` 口令保护，且同一时间只允许跑一个（返回 409），避免并发把内存或账单打爆。
+- 2核4G 对这个项目基础功能（分析/辩论/持仓/RAG）够用；深度研究单次耗时 4-8 分钟、成本约 $0.05-0.2，接口已加 `SA_DEEP_TOKEN` 口令保护，且同一时间只允许跑一个（返回 409），避免并发把内存或账单打爆。

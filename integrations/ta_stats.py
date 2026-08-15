@@ -9,8 +9,11 @@ from langchain_core.outputs import LLMResult
 # cli/utils.py has interactive exit()/getpass() calls that are unsafe to pull
 # into a server process, so "never import cli.*" is a hard rule here.
 
-_USD_PER_MTOK_IN = 3.0
-_USD_PER_MTOK_OUT = 15.0
+# DeepSeek V4-Flash rates (quick_think_llm, used by 10 of 12 graph nodes).
+# Research Manager + Portfolio Manager use the pricier V4-Pro tier, so this
+# slightly underestimates total cost — a rough live counter, not an invoice.
+_USD_PER_MTOK_IN = 0.14
+_USD_PER_MTOK_OUT = 0.28
 
 
 class StatsCallbackHandler(BaseCallbackHandler):

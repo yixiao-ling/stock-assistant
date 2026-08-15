@@ -17,6 +17,29 @@ class SAGraph(TradingAgentsGraph):
         selected_analysts = selected_analysts or ["market", "social", "news", "fundamentals"]
         super().__init__(selected_analysts=selected_analysts, debug=debug, config=config, callbacks=callbacks)
 
+        # _get_provider_kwargs() below only fixes the truncation for
+        # providers whose client class forwards "max_tokens" out of its own
+        # _PASSTHROUGH_KWARGS tuple (true for anthropic_client.py, NOT true
+        # for openai_client.py — DeepSeek and everything else routed through
+        # NormalizedChatOpenAI silently drops it). Both deep/quick LLM
+        # objects are plain pydantic ChatModel instances by the time
+        # super().__init__() returns, so set the field directly — provider-
+        # agnostic and doesn't depend on any passthrough list at all.
+        for llm in (self.deep_thinking_llm, self.quick_thinking_llm):
+            llm.max_tokens = _MAX_TOKENS
+
+        # DeepSeek's V4 models reason internally by default (a hidden
+        # `reasoning_content` field) and that reasoning shares the same
+        # max_tokens budget as the final answer — verified empirically: a
+        # 3-part synthesis prompt at max_tokens=3000 consumed all 3000 on
+        # reasoning_content and returned empty content with finish_reason
+        # "length". Every agent's prompt here already does the structuring
+        # work explicitly, so there's nothing thinking mode adds for this
+        # use case — disable it so max_tokens goes entirely to the answer.
+        if (self.config or {}).get("llm_provider") == "deepseek":
+            for llm in (self.deep_thinking_llm, self.quick_thinking_llm):
+                llm.extra_body = {"thinking": {"type": "disabled"}}
+
         # self.tool_nodes (built during super().__init__() via virtual
         # dispatch to _create_tool_nodes below) already has the extra tools.
         # graph_setup/workflow/graph are hardcoded inline in

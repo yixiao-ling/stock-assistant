@@ -6,7 +6,7 @@ from dataclasses import asdict
 from pathlib import Path
 from typing import List, Optional
 
-import anthropic
+import openai
 from dotenv import load_dotenv
 from fastapi import Depends, FastAPI, File, Form, Request, UploadFile
 from fastapi.middleware.cors import CORSMiddleware
@@ -28,7 +28,7 @@ from data.portfolio.risk_analyzer import (
 from data.rag import load_and_chunk_pdf, query_filings, store_chunks
 
 load_dotenv()
-_rag_client = anthropic.AsyncAnthropic(api_key=os.getenv("ANTHROPIC_API_KEY"))
+_rag_client = openai.AsyncOpenAI(api_key=os.getenv("DEEPSEEK_API_KEY"), base_url="https://api.deepseek.com")
 
 app = FastAPI(title="股票投研助手 API")
 
@@ -186,25 +186,28 @@ async def rag_query(body: RagQueryRequest):
             return {"answer": "未找到相关内容，请先上传该公司的财报 PDF。"}
 
         context = "\n\n---\n\n".join(passages)
-        response = await _rag_client.messages.create(
-            model="claude-sonnet-4-6",
+        response = await _rag_client.chat.completions.create(
+            model="deepseek-v4-flash",
             max_tokens=3000,
-            system=(
-                "你是财报分析专家。根据以下财报原文片段回答用户问题，"
-                "引用具体数据，不允许无依据的推断。如原文未提及，请明确说明。"
-            ),
-            messages=[{
-                "role": "user",
-                "content": f"【财报原文片段】\n{context}\n\n【问题】\n{body.question}",
-            }],
+            extra_body={"thinking": {"type": "disabled"}},
+            messages=[
+                {
+                    "role": "system",
+                    "content": (
+                        "你是财报分析专家。根据以下财报原文片段回答用户问题，"
+                        "引用具体数据，不允许无依据的推断。如原文未提及，请明确说明。"
+                    ),
+                },
+                {"role": "user", "content": f"【财报原文片段】\n{context}\n\n【问题】\n{body.question}"},
+            ],
         )
-        return {"answer": response.content[0].text}
+        return {"answer": response.choices[0].message.content}
     except Exception as e:
         return {"error": str(e)}
 
 
 # ── /deep/{ticker} · /deep/stream/{job_id} · /deep/result/{job_id} · /deep/jobs ─
-# Deep research: TA's full 12-agent LangGraph pipeline. ~$1-1.7/run, 4-8 min,
+# Deep research: TA's full 12-agent LangGraph pipeline. ~$0.05-0.2/run, 2-4 min,
 # so job-id + SSE rather than a blocking request (nginx proxy_read_timeout is
 # 300s and this box is single-worker). Gated behind SA_DEEP_TOKEN and capped
 # at one run at a time — see integrations/jobs.py::try_start.

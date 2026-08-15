@@ -1,15 +1,15 @@
 import asyncio
 import os
 
-import anthropic
+import openai
 from dotenv import load_dotenv
 
 load_dotenv()
 
-_MODEL = "claude-sonnet-4-6"
+_MODEL = "deepseek-v4-flash"
 _MAX_TOKENS = 2000
 
-_client = anthropic.AsyncAnthropic(api_key=os.getenv("ANTHROPIC_API_KEY"))
+_client = openai.AsyncOpenAI(api_key=os.getenv("DEEPSEEK_API_KEY"), base_url="https://api.deepseek.com")
 
 
 async def fundamental_agent(ticker: str, stock_data: dict, extra_context: str = "") -> str:
@@ -22,13 +22,13 @@ async def fundamental_agent(ticker: str, stock_data: dict, extra_context: str = 
         f"请分析 {ticker} 的基本面数据：\n{stock_data}"
         + (f"\n\n补充背景：{extra_context}" if extra_context else "")
     )
-    response = await _client.messages.create(
+    response = await _client.chat.completions.create(
         model=_MODEL,
         max_tokens=_MAX_TOKENS,
-        system=system,
-        messages=[{"role": "user", "content": user}],
+        extra_body={"thinking": {"type": "disabled"}},
+        messages=[{"role": "system", "content": system}, {"role": "user", "content": user}],
     )
-    return response.content[0].text
+    return response.choices[0].message.content
 
 
 async def sentiment_agent(ticker: str, news_list: list, extra_context: str = "") -> str:
@@ -44,13 +44,13 @@ async def sentiment_agent(ticker: str, news_list: list, extra_context: str = "")
         f"请分析 {ticker} 的近期新闻情绪：\n{news_text}"
         + (f"\n\n补充背景：{extra_context}" if extra_context else "")
     )
-    response = await _client.messages.create(
+    response = await _client.chat.completions.create(
         model=_MODEL,
         max_tokens=_MAX_TOKENS,
-        system=system,
-        messages=[{"role": "user", "content": user}],
+        extra_body={"thinking": {"type": "disabled"}},
+        messages=[{"role": "system", "content": system}, {"role": "user", "content": user}],
     )
-    return response.content[0].text
+    return response.choices[0].message.content
 
 
 async def technical_agent(ticker: str, stock_data: dict, extra_context: str = "", snapshot: str = "") -> str:
@@ -76,13 +76,13 @@ async def technical_agent(ticker: str, stock_data: dict, extra_context: str = ""
             f"请基于这些有限信息给出保守判断，明确说明数据不足，不要编造具体的 RSI/MACD 数值。"
             + (f"\n\n补充背景：{extra_context}" if extra_context else "")
         )
-    response = await _client.messages.create(
+    response = await _client.chat.completions.create(
         model=_MODEL,
         max_tokens=_MAX_TOKENS,
-        system=system,
-        messages=[{"role": "user", "content": user}],
+        extra_body={"thinking": {"type": "disabled"}},
+        messages=[{"role": "system", "content": system}, {"role": "user", "content": user}],
     )
-    return response.content[0].text
+    return response.choices[0].message.content
 
 
 async def _synthesis_agent(ticker: str, fundamental: str, sentiment: str, technical: str) -> str:
@@ -97,13 +97,13 @@ async def _synthesis_agent(ticker: str, fundamental: str, sentiment: str, techni
         f"【情绪报告】\n{sentiment}\n\n"
         f"【技术面报告】\n{technical}"
     )
-    response = await _client.messages.create(
+    response = await _client.chat.completions.create(
         model=_MODEL,
         max_tokens=4000,
-        system=system,
-        messages=[{"role": "user", "content": user}],
+        extra_body={"thinking": {"type": "disabled"}},
+        messages=[{"role": "system", "content": system}, {"role": "user", "content": user}],
     )
-    return response.content[0].text
+    return response.choices[0].message.content
 
 
 async def run_full_analysis(ticker: str, extra_context: str = "") -> dict:

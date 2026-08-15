@@ -4,8 +4,8 @@ uvicorn[standard]
 python-multipart
 python-dotenv
 
-# LLM
-anthropic
+# LLM (DeepSeek, via the OpenAI-compatible chat completions API)
+openai
 
 # Market data
 yfinance>=1.4.1

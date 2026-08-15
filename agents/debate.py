@@ -1,7 +1,7 @@
 import asyncio
 import os
 
-import anthropic
+import openai
 from dotenv import load_dotenv
 
 load_dotenv()
@@ -11,11 +11,11 @@ from pathlib import Path
 sys.path.insert(0, str(Path(__file__).parent.parent))
 from models.schemas import DebateResult
 
-_MODEL = "claude-sonnet-4-6"
+_MODEL = "deepseek-v4-flash"
 _MAX_TOKENS = 2000
 _JUDGE_MAX_TOKENS = 4000
 
-_client = anthropic.AsyncAnthropic(api_key=os.getenv("ANTHROPIC_API_KEY"))
+_client = openai.AsyncOpenAI(api_key=os.getenv("DEEPSEEK_API_KEY"), base_url="https://api.deepseek.com")
 
 BULL_SYSTEM = (
     "你是坚定的多头研究员。从共同信息基础中找出所有支持买入的证据。"
@@ -65,13 +65,13 @@ def _build_context(ticker: str, fundamental: str, sentiment: str, technical: str
 
 
 async def _call(system: str, user: str, max_tokens: int = _MAX_TOKENS) -> str:
-    response = await _client.messages.create(
+    response = await _client.chat.completions.create(
         model=_MODEL,
         max_tokens=max_tokens,
-        system=system,
-        messages=[{"role": "user", "content": user}],
+        extra_body={"thinking": {"type": "disabled"}},
+        messages=[{"role": "system", "content": system}, {"role": "user", "content": user}],
     )
-    return response.content[0].text
+    return response.choices[0].message.content
 
 
 async def run_debate(
